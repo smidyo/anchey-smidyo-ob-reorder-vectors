@@ -1,0 +1,33 @@
+{
+	"inputs": [
+		{
+			"dataShapeConstraint": {
+				"type": "file-svg",
+				"nullable": false
+			},
+			"name": "svg",
+			"title": "SVG",
+			"type": "STANDARD"
+		},
+		{
+			"dataShapeConstraint": {
+				"type": "text",
+				"list": false,
+				"nullable": true
+			},
+			"name": "strategy",
+			"title": "Strategy",
+			"type": "STANDARD",
+			"limitToTextOptions": ["start-end", "centroid"]
+		}
+	],
+	"outputs": [
+		{
+			"dataShapeConstraint": {},
+			"name": "reordered-svg",
+			"title": "Reordered SVG",
+			"type": "FOLLOWER",
+			"followInput": "svg"
+		}
+	]
+}

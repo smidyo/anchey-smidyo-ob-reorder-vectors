@@ -1,17 +1,79 @@
-/* Copyright 2020 Ricardo Iván Vieitez Parra
- *
- * All rights reserved.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
- * REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
- * INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
- * LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
- * OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
- * PERFORMANCE OF THIS SOFTWARE.
- */
+import AWS from 'aws-sdk';
+import fetch from 'node-fetch';
+import { reorderSvgPaths } from './svgXml';
+import { Strategy } from './reorderPaths';
+const LambdaService = new AWS.Lambda();
 
-// NB! The index file must come *last* for Browserify to export symbols correctly
+exports.handler = async ({
+	payload,
+	tempPayloadletFilesDomain,
+	getTempPayloadletFileUploadURLsFunctionARN,
+}: {
+	payload: {
+		svg: Array<{
+			svg: string;
+			originalFilename?: string;
+			unit?: string;
+		}>;
+		strategy: ['start-end' | 'centroid'];
+	};
+	tempPayloadletFilesDomain: string;
+	getTempPayloadletFileUploadURLsFunctionARN: string;
+}) => {
+	const svgs = payload.svg;
+	const [strategy] = payload.strategy;
 
-export { Strategy } from './reorderPaths';
-export { reorderSvgPaths } from './svgXml';
+	try {
+		const reOrderedSVGs = await Promise.all(
+			svgs.map(async (svg) => {
+				const svgData = await fetch(
+					'https://' + tempPayloadletFilesDomain + '/' + svg.svg,
+				).then((res) => res.text());
+
+				const [reOrderedSVG] = await reorderSvgPaths(
+					svgData,
+					{
+						'start-end': Strategy.START_END,
+						centroid: Strategy.CENTROID,
+					}[strategy],
+				);
+
+				const uploadURLRes = await LambdaService.invoke({
+					FunctionName: getTempPayloadletFileUploadURLsFunctionARN,
+					Payload: JSON.stringify({
+						forFiles: [{ extension: 'svg' }],
+					}),
+				}).promise();
+
+				const [uploadInfo] = JSON.parse(uploadURLRes.Payload as string);
+
+				await fetch(uploadInfo.uploadURL, {
+					method: 'PUT',
+					body: reOrderedSVG,
+				});
+
+				return {
+					svg: uploadInfo.fileKey,
+					originalFilename: svg.originalFilename,
+					unit: svg.unit,
+				};
+			}),
+		);
+
+		return {
+			type: 'OPERATION_BLOCK_RESULT_OUTCOME',
+			result: {
+				'reordered-svg': reOrderedSVGs,
+			},
+		};
+	} catch (err) {
+		return {
+			type: 'REJECTION_OUTCOME',
+			rejection: 'Could not reorder vectors.',
+			error: {
+				message: err.message,
+				stack: err.stack,
+			},
+		};
+	}
+};
