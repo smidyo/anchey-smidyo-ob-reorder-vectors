@@ -1,5 +1,5 @@
 {
-  "name": "@smidyo/anchey-smidyo-reorder-vectors",
+  "name": "anchey-smidyo-ob-reorder-vectors",
   "version": "1.0.0",
   "description": "Reorder paths in an SVG file by relative proximity",
   "main": "src/index.ts",
