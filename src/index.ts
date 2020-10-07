@@ -1,7 +1,8 @@
 import AWS from 'aws-sdk';
 import fetch from 'node-fetch';
-import { reorderSvgPaths } from './svgXml';
-import { Strategy } from './reorderPaths';
+import { SvgDocument } from './SvgDocument';
+import { Strategy } from './SvgPathReorderUtils';
+
 const LambdaService = new AWS.Lambda();
 
 exports.handler = async ({
@@ -30,13 +31,7 @@ exports.handler = async ({
 					'https://' + tempPayloadletFilesDomain + '/' + svg.svg,
 				).then((res) => res.text());
 
-				const [reOrderedSVG] = await reorderSvgPaths(
-					svgData,
-					{
-						'start-end': Strategy.START_END,
-						centroid: Strategy.CENTROID,
-					}[strategy],
-				);
+				const [reOrderedSVG] = await SvgDocument.fromString(svgData).reorderPaths({"start-end":'', "centroid":''}[strategy]).toString();
 
 				const uploadURLRes = await LambdaService.invoke({
 					FunctionName: getTempPayloadletFileUploadURLsFunctionARN,
@@ -76,4 +71,4 @@ exports.handler = async ({
 			},
 		};
 	}
-};
+}
