@@ -1,6 +1,6 @@
 {
   "name": "anchey-smidyo-ob-reorder-vectors",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "description": "Reorder paths in an SVG file by relative proximity",
   "main": "src/index.ts",
   "devDependencies": {
@@ -32,8 +32,7 @@
   "scripts": {
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "lintFix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
-    "pack": "eslint . --ext .js,.jsx,.ts,.tsx && tsc && grunt",
-    "start": "npm run pack && node test/test.js"
+    "pack": "eslint . --ext .js,.jsx,.ts,.tsx && tsc && grunt"
   },
   "author": "Ricardo Iván Vieitez Parra",
   "license": "",

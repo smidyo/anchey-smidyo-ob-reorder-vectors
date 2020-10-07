@@ -31,7 +31,19 @@ exports.handler = async ({
 					'https://' + tempPayloadletFilesDomain + '/' + svg.svg,
 				).then((res) => res.text());
 
-				const [reOrderedSVG] = await SvgDocument.fromString(svgData).reorderPaths({"start-end":'', "centroid":''}[strategy]).toString();
+				const [reOrderedSVG] = await SvgDocument.fromString(
+					svgData,
+				).then((docs) =>
+					docs.map((d) => {
+						d.reorderPaths(
+							{
+								'start-end': Strategy.START_END,
+								centroid: Strategy.CENTROID,
+							}[strategy],
+						);
+						return d.toString();
+					}),
+				);
 
 				const uploadURLRes = await LambdaService.invoke({
 					FunctionName: getTempPayloadletFileUploadURLsFunctionARN,
@@ -50,7 +62,7 @@ exports.handler = async ({
 				return {
 					svg: uploadInfo.fileKey,
 					originalFilename: svg.originalFilename,
-					unit: svg.unit,
+					unit: 'px',
 				};
 			}),
 		);
@@ -71,4 +83,4 @@ exports.handler = async ({
 			},
 		};
 	}
-}
+};
