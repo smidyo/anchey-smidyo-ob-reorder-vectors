@@ -1160,7 +1160,7 @@ export class SvgDocument {
 			this.structure.properties.viewBox
 				? `viewBox="${this.structure.properties.viewBox.minX} ${this.structure.properties.viewBox.minY} ${this.structure.properties.viewBox.width} ${this.structure.properties.viewBox.height}"`
 				: ''
-		} xmlns="${SVG_NS}"><style type="text/css">path{fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;}</style><g>${
+		} xmlns="${SVG_NS}"><g>${
 			this.structure.paths.length
 				? this.structure.paths
 						.map((path) => `<path d="${path}" />`)
