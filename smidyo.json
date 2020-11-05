@@ -19,6 +19,16 @@
 			"title": "Strategy",
 			"type": "STANDARD",
 			"limitToTextOptions": ["start-end", "centroid"]
+		},
+		{
+			"dataShapeConstraint": {
+				"type": "boolean",
+				"list": false,
+				"nullable": true
+			},
+			"name": "use-physical-dimensions",
+			"title": "Use Physical Dimensions",
+			"type": "STANDARD"
 		}
 	],
 	"outputs": [

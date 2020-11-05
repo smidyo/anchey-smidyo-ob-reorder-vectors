@@ -17,12 +17,16 @@ exports.handler = async ({
 			unit?: string;
 		}>;
 		strategy: ['start-end' | 'centroid'];
+		'use-physical-dimensions'?: [] | [boolean | null];
 	};
 	tempPayloadletFilesDomain: string;
 	getTempPayloadletFileUploadURLsFunctionARN: string;
 }) => {
 	const svgs = payload.svg;
 	const [strategy] = payload.strategy;
+	const [usePhysicalDimensions] = payload['use-physical-dimensions'] || [
+		false,
+	];
 
 	try {
 		const reOrderedSVGs = await Promise.all(
@@ -41,7 +45,7 @@ exports.handler = async ({
 								centroid: Strategy.CENTROID,
 							}[strategy],
 						);
-						return d.toString();
+						return d.toString(usePhysicalDimensions || false);
 					}),
 				);
 

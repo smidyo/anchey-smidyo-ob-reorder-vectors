@@ -1,5 +1,5 @@
 {
-  "name": "vector-express.eb.svg-reorder",
+  "name": "vector-express.ob.svg-reorder",
   "version": "5.0.0",
   "description": "Reorder paths in an SVG file by relative proximity",
   "main": "dist/index.js",
