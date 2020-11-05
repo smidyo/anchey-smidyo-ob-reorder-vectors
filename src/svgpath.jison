@@ -14,7 +14,7 @@
 %options flex
 
 %{
-	const Decimal = require('decimal.js');
+	const Decimal = require('@Exact-Realty/decimal.js-float');
 %}
 
 /* lexical grammar */
@@ -173,7 +173,7 @@ elliptical_arc_argument_sequence
 	;
 
 elliptical_arc_argument
-	: number comma_wsp number comma_wsp number comma_wsp flag comma_wsp flag comma_wsp coordinate_pair
+	: coordinate comma_wsp coordinate comma_wsp coordinate comma_wsp flag comma_wsp flag comma_wsp coordinate_pair
 		{ $$ = [$1.abs(), $3.abs(), $5, $7, $9, $11]; }
 	;
 

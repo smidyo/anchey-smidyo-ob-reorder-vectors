@@ -29,7 +29,7 @@ import {
 } from '@generated/svgpath';
 
 import { SvgTransform } from './SvgTransform';
-import { Decimal } from 'decimal.js';
+import { Decimal } from '@Exact-Realty/decimal.js-float';
 
 const zero = new Decimal(0);
 
@@ -800,6 +800,10 @@ export class SvgPath {
 			return this._start;
 		}
 
+		if (!this._tree.length) {
+			return (this._start = [zero, zero]);
+		}
+
 		let x: Decimal = zero,
 			y: Decimal = zero;
 
@@ -824,6 +828,10 @@ export class SvgPath {
 			return this._end;
 		}
 
+		if (!this._tree.length) {
+			return (this._end = [zero, zero]);
+		}
+
 		let x: Decimal = zero,
 			y: Decimal = zero;
 
@@ -844,8 +852,10 @@ export class SvgPath {
 				break;
 			case 'H':
 				x = lastArg as Decimal;
+				[, y] = this.start;
 				break;
 			case 'V':
+				[x] = this.start;
 				y = lastArg as Decimal;
 				break;
 			case 'Z':
@@ -869,6 +879,10 @@ export class SvgPath {
 	get centroid(): [Decimal, Decimal] {
 		if (this._centroid) {
 			return this._centroid;
+		}
+
+		if (!this._tree.length) {
+			return (this._centroid = [zero, zero]);
 		}
 
 		let count = 0;
@@ -1086,7 +1100,7 @@ export class SvgPath {
 				],
 				transform,
 			);
-		} else if (rx.lte(width.div(2)) && ry.lte(height.div(2))) {
+		} else if (rx.lt(width.div(2)) && ry.lt(height.div(2))) {
 			return new SvgPath(
 				[
 					['M', [[x.plus(rx), y]]],
@@ -1102,7 +1116,7 @@ export class SvgPath {
 				],
 				transform,
 			);
-		} else if (rx.lte(width.div(2))) {
+		} else if (rx.lt(width.div(2))) {
 			return new SvgPath(
 				[
 					['M', [[x.plus(rx), y]]],
@@ -1138,7 +1152,7 @@ export class SvgPath {
 				],
 				transform,
 			);
-		} else if (ry.lte(height.div(2))) {
+		} else if (ry.lt(height.div(2))) {
 			return new SvgPath(
 				[
 					['M', [[x.plus(width), y.plus(ry)]]],

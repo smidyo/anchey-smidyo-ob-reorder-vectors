@@ -11,7 +11,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-import { Decimal } from 'decimal.js';
+import { Decimal } from '@Exact-Realty/decimal.js-float';
 import { Parser } from 'xml2js';
 
 import { SvgPath } from './SvgPath';
@@ -46,6 +46,7 @@ type SvgDocumentProperties = {
 	width: Decimal;
 	height: Decimal;
 	viewBox?: SvgViewBox;
+	preserveAspectRatio?: string;
 	version: string;
 };
 
@@ -70,9 +71,17 @@ const one = new Decimal(1);
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
 
-// TODO: Support for whole range of characters allowed in the SVG spec
-const hrefRegex = /^\s*#([:A-Z_a-z]*)\s*$/u;
-const idRegex = /^[:A-Z_a-z][-.0-9:A-Z_a-z]*$/u;
+/*
+ * https://www.w3.org/TR/2006/REC-xml11-20060816/#NT-Name
+ * [4]   	NameStartChar	   ::=   	":" | [A-Z] | "_" | [a-z] | [#xC0-#xD6] | [#xD8-#xF6] | [#xF8-#x2FF] | [#x370-#x37D] | [#x37F-#x1FFF] | [#x200C-#x200D] | [#x2070-#x218F] | [#x2C00-#x2FEF] | [#x3001-#xD7FF] | [#xF900-#xFDCF] | [#xFDF0-#xFFFD] | [#x10000-#xEFFFF]
+ * [4a]   	NameChar	   ::=   	NameStartChar | "-" | "." | [0-9] | #xB7 | [#x0300-#x036F] | [#x203F-#x2040]
+ * [5]   	Name	   ::=   	NameStartChar (NameChar)*
+ */
+// eslint-disable-next-line no-misleading-character-class
+const idRegex = /^\s*([:A-Z_a-z\u{C0}-\u{D6}\u{D8}-\u{F6}\u{F8}-\u{2FF}\u{370}-\u{37D}\u{37F}-\u{1FFF}\u{200C}-\u{200D}\u{2070}-\u{218F}\u{2C00}-\u{2FEF}\u{3001}-\u{D7FF}\u{F900}-\u{FDCF}\u{FDF0}-\u{FFFD}\u{10000}-\u{EFFFF}][:A-Z_a-z\u{C0}-\u{D6}\u{D8}-\u{F6}\u{F8}-\u{2FF}\u{370}-\u{37D}\u{37F}-\u{1FFF}\u{200C}-\u{200D}\u{2070}-\u{218F}\u{2C00}-\u{2FEF}\u{3001}-\u{D7FF}\u{F900}-\u{FDCF}\u{FDF0}-\u{FFFD}\u{10000}-\u{EFFFF}.0-9\u{B7}\u{0300}-\u{036F}\u{203F}-\u{2040}-]*)\s*$/u;
+// eslint-disable-next-line no-misleading-character-class
+const hrefRegex = /^\s*#([:A-Z_a-z\u{C0}-\u{D6}\u{D8}-\u{F6}\u{F8}-\u{2FF}\u{370}-\u{37D}\u{37F}-\u{1FFF}\u{200C}-\u{200D}\u{2070}-\u{218F}\u{2C00}-\u{2FEF}\u{3001}-\u{D7FF}\u{F900}-\u{FDCF}\u{FDF0}-\u{FFFD}\u{10000}-\u{EFFFF}][:A-Z_a-z\u{C0}-\u{D6}\u{D8}-\u{F6}\u{F8}-\u{2FF}\u{370}-\u{37D}\u{37F}-\u{1FFF}\u{200C}-\u{200D}\u{2070}-\u{218F}\u{2C00}-\u{2FEF}\u{3001}-\u{D7FF}\u{F900}-\u{FDCF}\u{FDF0}-\u{FFFD}\u{10000}-\u{EFFFF}.0-9\u{B7}\u{0300}-\u{036F}\u{203F}-\u{2040}-]*)\s*$/u;
+
 const lengthRegex = /^\s*([+-]?[0-9]+(?:[Ee][+-]?[0-9]+)?|[+-]?[0-9]*[.][0-9]+(?:[Ee][+-]?[0-9]+)?)(em|ex|px|in|cm|mm|pt|pc|%)?\s*$/;
 const viewBoxRegex = /^\s*([+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[Ee][+-]?[0-9]+)?)(?:\s+|\s*,\s*|(?=[+-.]))([+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[Ee][+-]?[0-9]+)?)(?:\s+|\s*,\s*|(?=[+-.]))([+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[Ee][+-]?[0-9]+)?)(?:\s+|\s*,\s*|(?=[+-.]))([+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[Ee][+-]?[0-9]+)?)\s*$/;
 
@@ -119,6 +128,146 @@ class UnresolvedSvgPath {
 	}
 }
 
+const preserveAspectRatioRegex = /^\s*(x(Min|Mid|Max)Y(Min|Mid|Max)|none)\s*(meet|slice)?\s*$/;
+
+const viewBoxTransform = (
+	properties: SvgDocumentProperties,
+	preserveAspectRatio?: string,
+): SvgTransform | undefined => {
+	if (!properties.viewBox) {
+		return;
+	}
+
+	enum Align {
+		None,
+		Min,
+		Mid,
+		Max,
+	}
+
+	enum MeetOrSlice {
+		Meet,
+		Slice,
+	}
+
+	let alignX: Align = Align.Mid;
+	let alignY: Align = Align.Mid;
+	let meetOrSlice: MeetOrSlice = MeetOrSlice.Meet;
+
+	const preserveAspectRatioParsed = preserveAspectRatio?.match(
+		preserveAspectRatioRegex,
+	);
+
+	if (preserveAspectRatioParsed) {
+		if (preserveAspectRatioParsed[1] === 'none') {
+			alignX = alignY = Align.None;
+		} else {
+			if (preserveAspectRatioParsed[2] === 'Min') {
+				alignX = Align.Min;
+			} else if (preserveAspectRatioParsed[2] === 'Mid') {
+				alignX = Align.Mid;
+			} else if (preserveAspectRatioParsed[2] === 'Max') {
+				alignX = Align.Max;
+			}
+
+			if (preserveAspectRatioParsed[3] === 'Min') {
+				alignY = Align.Min;
+			} else if (preserveAspectRatioParsed[3] === 'Mid') {
+				alignY = Align.Mid;
+			} else if (preserveAspectRatioParsed[3] === 'Max') {
+				alignY = Align.Max;
+			}
+
+			if (preserveAspectRatioParsed[4] === 'meet') {
+				meetOrSlice = MeetOrSlice.Meet;
+			} else if (preserveAspectRatioParsed[4] === 'slice') {
+				meetOrSlice = MeetOrSlice.Slice;
+			}
+		}
+	}
+
+	if (alignX === Align.None) {
+		const [Sx, Sy] = [
+			properties.width.div(properties.viewBox.width),
+			properties.height.div(properties.viewBox.height),
+		];
+
+		return new SvgTransform([
+			Sx,
+			zero,
+			zero,
+			Sy,
+			properties.viewBox.minX.neg().mul(Sx),
+			properties.viewBox.minY.neg().mul(Sy),
+		]);
+	} else {
+		let S: Decimal = one,
+			ftx: Decimal = zero,
+			fty: Decimal = zero,
+			tx: Decimal,
+			ty: Decimal;
+
+		if (meetOrSlice === MeetOrSlice.Meet) {
+			S = Decimal.min(
+				properties.width.div(properties.viewBox.width),
+				properties.height.div(properties.viewBox.height),
+			);
+
+			if (properties.width.gt(properties.height)) {
+				ftx = one;
+			} else if (properties.width.lt(properties.height)) {
+				fty = one;
+			}
+		} else if (meetOrSlice === MeetOrSlice.Slice) {
+			S = Decimal.max(
+				properties.width.div(properties.viewBox.width),
+				properties.height.div(properties.viewBox.height),
+			);
+
+			if (properties.width.lt(properties.height)) {
+				ftx = one;
+			} else if (properties.width.gt(properties.height)) {
+				fty = one;
+			}
+		}
+
+		tx = properties.viewBox.minX.neg().mul(S);
+		ty = properties.viewBox.minY.neg().mul(S);
+
+		if (alignX === Align.Mid) {
+			tx = tx.plus(
+				ftx.mul(
+					properties.width
+						.sub(properties.viewBox.width.mul(S))
+						.div(2),
+				),
+			);
+		} else if (alignX === Align.Max) {
+			tx = tx.plus(
+				ftx.mul(properties.width.sub(properties.viewBox.width.mul(S))),
+			);
+		}
+
+		if (alignY === Align.Mid) {
+			ty = ty.plus(
+				fty.mul(
+					properties.height
+						.sub(properties.viewBox.height.mul(S))
+						.div(2),
+				),
+			);
+		} else if (alignY === Align.Max) {
+			ty = ty.plus(
+				fty.mul(
+					properties.height.sub(properties.viewBox.height.mul(S)),
+				),
+			);
+		}
+
+		return new SvgTransform([S, zero, zero, S, tx, ty]);
+	}
+};
+
 const parseLength = (value: string, baseLength: Decimal) => {
 	const match = value.match(lengthRegex);
 	if (match) {
@@ -155,7 +304,7 @@ const parseLength = (value: string, baseLength: Decimal) => {
 					scale = 16;
 					break;
 				case '%':
-					scale = baseLength.mul(length).div(100);
+					scale = baseLength.div(100);
 					break;
 			}
 		}
@@ -193,10 +342,13 @@ export class SvgDocument {
 		): SvgParseResult => {
 			if (el['$ns']['uri'] === SVG_NS) {
 				if (args === undefined && el['$ns']['local'] === 'svg') {
-					let width: Decimal = new Decimal(300),
+					let widthAttr = '100%',
+						heightAttr = '100%',
+						width: Decimal = new Decimal(300),
 						height: Decimal = new Decimal(150),
 						version = '1.1',
 						transform: string | undefined,
+						preserveAspectRatio: string | undefined,
 						viewBox: SvgViewBox | undefined;
 
 					for (const attr of Object.values(el['$'] ?? {})) {
@@ -205,24 +357,28 @@ export class SvgDocument {
 							'uri' in attr &&
 							'local' in attr &&
 							'value' in attr &&
-							[SVG_NS, ''].includes(attr['uri'])
+							([SVG_NS, ''].includes(attr['uri']) ||
+								attr['name'] === 'xml:id')
 						) {
 							switch (attr['local']) {
 								case 'width':
-									width =
-										parseLength(attr['value'], width) ??
-										width;
+									widthAttr = attr['value'] ?? widthAttr;
 									break;
 								case 'height':
-									height =
-										parseLength(attr['value'], height) ??
-										height;
+									heightAttr = attr['value'] ?? heightAttr;
+									break;
+								case 'preserveAspectRatio':
+									preserveAspectRatio =
+										(attr['value'].match(
+											preserveAspectRatioRegex,
+										) ?? [])[0] ?? preserveAspectRatio;
 									break;
 								case 'viewBox':
 									{
 										const viewBoxValues = String(
 											attr['value'],
 										).match(viewBoxRegex);
+
 										if (viewBoxValues) {
 											viewBox = {
 												minX: new Decimal(
@@ -251,9 +407,14 @@ export class SvgDocument {
 						}
 					}
 
-					const svgTransform: SvgTransform = SvgTransform.fromString(
-						transform,
-					);
+					width =
+						parseLength(widthAttr, viewBox?.width ?? width) ??
+						width;
+					height =
+						parseLength(heightAttr, viewBox?.height ?? height) ??
+						height;
+
+					const svgTransform = SvgTransform.fromString(transform);
 
 					const defs = {};
 					const paths: (SvgPath | UnresolvedSvgPath)[] = [];
@@ -264,13 +425,16 @@ export class SvgDocument {
 							width: width,
 							version: version,
 							viewBox: viewBox,
+							preserveAspectRatio: viewBox
+								? preserveAspectRatio
+								: undefined,
 						},
 						render: true,
 						CTM: svgTransform,
 						defs: defs,
 					};
 
-					(el['$$'] ?? []).forEach((node) => {
+					el['$$']?.forEach((node) => {
 						const result = extractPaths(node, args_);
 						if (result.paths) {
 							paths.push(...result.paths);
@@ -313,7 +477,8 @@ export class SvgDocument {
 									attr instanceof Object &&
 									'uri' in attr &&
 									'local' in attr &&
-									[SVG_NS, ''].includes(attr['uri'])
+									([SVG_NS, ''].includes(attr['uri']) ||
+										attr['name'] === 'xml:id')
 								) {
 									switch (attr['local']) {
 										case 'transform':
@@ -323,27 +488,27 @@ export class SvgDocument {
 										case 'id':
 											id =
 												(attr['value'].match(idRegex) ||
-													[])[0] ?? id;
+													[])[1] ?? id;
 											break;
 									}
 								}
 							}
 
 							if (Array.isArray(el['$$'])) {
-								const svgTransform = transform
-									? SvgTransform.fromString(transform)
-									: undefined;
+								const svgTransform = SvgTransform.fromString(
+									transform,
+								);
 
 								const args_ = {
 									defs: args.defs,
 									properties: args.properties,
 									render: true,
-									CTM:
-										(id
-											? svgTransform
-											: args.CTM?.catenate(
-													svgTransform,
-											  )) ?? svgTransform,
+									CTM: id
+										? svgTransform
+										: SvgTransform.catenate(
+												svgTransform,
+												args.CTM,
+										  ),
 								};
 
 								const results = el['$$'].map((node) =>
@@ -388,6 +553,173 @@ export class SvgDocument {
 								});
 							}
 							return {};
+						case 'svg': {
+							// TODO: 'symbol'
+							let width: Decimal | undefined,
+								height: Decimal | undefined,
+								x: Decimal | undefined,
+								y: Decimal | undefined,
+								preserveAspectRatio: string | undefined,
+								viewBox: SvgViewBox | undefined,
+								transform: string | undefined,
+								id: string | undefined;
+
+							for (const attr of Object.values(el['$'] ?? {})) {
+								if (
+									attr instanceof Object &&
+									'uri' in attr &&
+									'local' in attr &&
+									([SVG_NS, ''].includes(attr['uri']) ||
+										attr['name'] === 'xml:id')
+								) {
+									switch (attr['local']) {
+										case 'width':
+											width =
+												parseLength(
+													attr['value'],
+													baseLengthX,
+												) ?? width;
+											break;
+										case 'height':
+											height =
+												parseLength(
+													attr['value'],
+													baseLengthY,
+												) ?? height;
+											break;
+										case 'x':
+											x =
+												parseLength(
+													attr['value'],
+													baseLengthX,
+												) ?? x;
+											break;
+										case 'y':
+											y =
+												parseLength(
+													attr['value'],
+													baseLengthY,
+												) ?? y;
+											break;
+										case 'preserveAspectRatio':
+											preserveAspectRatio =
+												attr['value'] ??
+												preserveAspectRatio;
+											break;
+										case 'viewBox':
+											{
+												const viewBoxValues = String(
+													attr['value'],
+												).match(viewBoxRegex);
+
+												if (viewBoxValues) {
+													viewBox = {
+														minX: new Decimal(
+															viewBoxValues[1],
+														),
+														minY: new Decimal(
+															viewBoxValues[2],
+														),
+														width: new Decimal(
+															viewBoxValues[3],
+														),
+														height: new Decimal(
+															viewBoxValues[4],
+														),
+													};
+												}
+											}
+											break;
+										case 'transform':
+											transform =
+												attr['value'] ?? transform;
+											break;
+										case 'id':
+											id =
+												(attr['value'].match(idRegex) ||
+													[])[1] ?? id;
+											break;
+									}
+								}
+							}
+
+							if (Array.isArray(el['$$'])) {
+								const properties = {
+									height:
+										height ??
+										args.properties.viewBox?.height ??
+										args.properties.height,
+									width:
+										width ??
+										args.properties.viewBox?.width ??
+										args.properties.width,
+									version: args.properties.version,
+									viewBox: viewBox ?? args.properties.viewBox,
+								};
+
+								const useTranslateTransform =
+									x ?? y
+										? new SvgTransform([
+												one,
+												zero,
+												zero,
+												one,
+												x ?? zero,
+												y ?? zero,
+										  ])
+										: undefined;
+
+								const svgTransform = SvgTransform.catenate(
+									viewBoxTransform(
+										properties,
+										preserveAspectRatio,
+									),
+									useTranslateTransform,
+									SvgTransform.fromString(transform),
+								);
+
+								const args_ = {
+									defs: args.defs,
+									properties: properties,
+									render: true,
+									CTM: id
+										? svgTransform
+										: SvgTransform.catenate(
+												svgTransform,
+												args.CTM,
+										  ),
+								};
+
+								const results = el['$$'].map((node) =>
+									extractPaths(node, args_),
+								);
+
+								const paths: (
+									| SvgPath
+									| UnresolvedSvgPath
+								)[] = results.flatMap(
+									(result) => result.paths ?? [],
+								);
+
+								// TODO: Use needs to handle width and height
+								if (id) {
+									args.defs[id] = paths;
+								}
+
+								if (args.render) {
+									if (id && args.CTM) {
+										return {
+											paths: paths.map((svgPath) =>
+												svgPath.transform(args.CTM),
+											),
+										};
+									} else {
+										return { paths: paths };
+									}
+								}
+							}
+							return {};
+						}
 						case 'circle':
 							{
 								let cx: Decimal | undefined,
@@ -403,7 +735,8 @@ export class SvgDocument {
 										attr instanceof Object &&
 										'uri' in attr &&
 										'local' in attr &&
-										[SVG_NS, ''].includes(attr['uri'])
+										([SVG_NS, ''].includes(attr['uri']) ||
+											attr['name'] === 'xml:id')
 									) {
 										switch (attr['local']) {
 											case 'cx':
@@ -435,16 +768,16 @@ export class SvgDocument {
 												id =
 													(attr['value'].match(
 														idRegex,
-													) || [])[0] ?? id;
+													) ?? [])[1] ?? id;
 												break;
 										}
 									}
 								}
 
 								if (id) {
-									const svgTransform = transform
-										? SvgTransform.fromString(transform)
-										: undefined;
+									const svgTransform = SvgTransform.fromString(
+										transform,
+									);
 									const svgPath = SvgPath.fromCircle(
 										cx,
 										cy,
@@ -494,7 +827,8 @@ export class SvgDocument {
 										attr instanceof Object &&
 										'uri' in attr &&
 										'local' in attr &&
-										[SVG_NS, ''].includes(attr['uri'])
+										([SVG_NS, ''].includes(attr['uri']) ||
+											attr['name'] === 'xml:id')
 									) {
 										switch (attr['local']) {
 											case 'cx':
@@ -537,16 +871,16 @@ export class SvgDocument {
 												id =
 													(attr['value'].match(
 														idRegex,
-													) || [])[0] ?? id;
+													) ?? [])[1] ?? id;
 												break;
 										}
 									}
 								}
 
 								if (id) {
-									const svgTransform = transform
-										? SvgTransform.fromString(transform)
-										: undefined;
+									const svgTransform = SvgTransform.fromString(
+										transform,
+									);
 									const svgPath = SvgPath.fromEllipse(
 										cx,
 										cy,
@@ -598,7 +932,8 @@ export class SvgDocument {
 										attr instanceof Object &&
 										'uri' in attr &&
 										'local' in attr &&
-										[SVG_NS, ''].includes(attr['uri'])
+										([SVG_NS, ''].includes(attr['uri']) ||
+											attr['name'] === 'xml:id')
 									) {
 										switch (attr['local']) {
 											case 'x1':
@@ -637,16 +972,16 @@ export class SvgDocument {
 												id =
 													(attr['value'].match(
 														idRegex,
-													) || [])[0] ?? id;
+													) ?? [])[1] ?? id;
 												break;
 										}
 									}
 								}
 
 								if (id) {
-									const svgTransform = transform
-										? SvgTransform.fromString(transform)
-										: undefined;
+									const svgTransform = SvgTransform.fromString(
+										transform,
+									);
 									const svgPath = SvgPath.fromLine(
 										x1,
 										y1,
@@ -671,7 +1006,7 @@ export class SvgDocument {
 												x1,
 												y1,
 												x2,
-												x2,
+												y2,
 												SvgTransform.fromString(
 													transform,
 													args.CTM,
@@ -695,7 +1030,8 @@ export class SvgDocument {
 										attr instanceof Object &&
 										'uri' in attr &&
 										'local' in attr &&
-										[SVG_NS, ''].includes(attr['uri'])
+										([SVG_NS, ''].includes(attr['uri']) ||
+											attr['name'] === 'xml:id')
 									) {
 										switch (attr['local']) {
 											case 'd':
@@ -709,16 +1045,16 @@ export class SvgDocument {
 												id =
 													(attr['value'].match(
 														idRegex,
-													) || [])[0] ?? id;
+													) ?? [])[1] ?? id;
 												break;
 										}
 									}
 								}
 
 								if (id) {
-									const svgTransform = transform
-										? SvgTransform.fromString(transform)
-										: undefined;
+									const svgTransform = SvgTransform.fromString(
+										transform,
+									);
 									const svgPaths = SvgPath.fromString(
 										d,
 										svgTransform,
@@ -759,7 +1095,8 @@ export class SvgDocument {
 										attr instanceof Object &&
 										'uri' in attr &&
 										'local' in attr &&
-										[SVG_NS, ''].includes(attr['uri'])
+										([SVG_NS, ''].includes(attr['uri']) ||
+											attr['name'] === 'xml:id')
 									) {
 										switch (attr['local']) {
 											case 'points':
@@ -774,16 +1111,16 @@ export class SvgDocument {
 												id =
 													(attr['value'].match(
 														idRegex,
-													) || [])[0] ?? id;
+													) ?? [])[1] ?? id;
 												break;
 										}
 									}
 								}
 
 								if (id) {
-									const svgTransform = transform
-										? SvgTransform.fromString(transform)
-										: undefined;
+									const svgTransform = SvgTransform.fromString(
+										transform,
+									);
 									const svgPath = SvgPath.fromPolygon(
 										points,
 										svgTransform,
@@ -826,7 +1163,8 @@ export class SvgDocument {
 										attr instanceof Object &&
 										'uri' in attr &&
 										'local' in attr &&
-										[SVG_NS, ''].includes(attr['uri'])
+										([SVG_NS, ''].includes(attr['uri']) ||
+											attr['name'] === 'xml:id')
 									) {
 										switch (attr['local']) {
 											case 'points':
@@ -841,16 +1179,16 @@ export class SvgDocument {
 												id =
 													(attr['value'].match(
 														idRegex,
-													) || [])[0] ?? id;
+													) ?? [])[1] ?? id;
 												break;
 										}
 									}
 								}
 
 								if (id) {
-									const svgTransform = transform
-										? SvgTransform.fromString(transform)
-										: undefined;
+									const svgTransform = SvgTransform.fromString(
+										transform,
+									);
 									const svgPath = SvgPath.fromPolyline(
 										points,
 										svgTransform,
@@ -898,7 +1236,8 @@ export class SvgDocument {
 										attr instanceof Object &&
 										'uri' in attr &&
 										'local' in attr &&
-										[SVG_NS, ''].includes(attr['uri'])
+										([SVG_NS, ''].includes(attr['uri']) ||
+											attr['name'] === 'xml:id')
 									) {
 										switch (attr['local']) {
 											case 'x':
@@ -955,16 +1294,16 @@ export class SvgDocument {
 												id =
 													(attr['value'].match(
 														idRegex,
-													) || [])[0] ?? id;
+													) ?? [])[1] ?? id;
 												break;
 										}
 									}
 								}
 
 								if (id) {
-									const svgTransform = transform
-										? SvgTransform.fromString(transform)
-										: undefined;
+									const svgTransform = SvgTransform.fromString(
+										transform,
+									);
 									const svgPath = SvgPath.fromRect(
 										x,
 										y,
@@ -1023,7 +1362,10 @@ export class SvgDocument {
 										'local' in attr
 									) {
 										if (
-											[SVG_NS, ''].includes(attr['uri'])
+											[SVG_NS, ''].includes(
+												attr['uri'],
+											) ||
+											attr['name'] === 'xml:id'
 										) {
 											switch (attr['local']) {
 												case 'x':
@@ -1069,7 +1411,7 @@ export class SvgDocument {
 													id =
 														(attr['value'].match(
 															idRegex,
-														) || [])[0] ?? id;
+														) ?? [])[1] ?? id;
 													break;
 											}
 										}
@@ -1089,8 +1431,9 @@ export class SvgDocument {
 								if (!href) {
 									return {};
 								}
+
 								const useTranslateTransform =
-									x || y
+									x ?? y
 										? new SvgTransform([
 												one,
 												zero,
@@ -1102,12 +1445,10 @@ export class SvgDocument {
 										: undefined;
 
 								if (id) {
-									const svgTransform =
-										transform || useTranslateTransform
-											? SvgTransform.fromString(
-													transform,
-											  ).catenate(useTranslateTransform)
-											: undefined;
+									const svgTransform = SvgTransform.catenate(
+										useTranslateTransform,
+										SvgTransform.fromString(transform),
+									);
 									const svgPath = new UnresolvedSvgPath(
 										href,
 										svgTransform,
@@ -1125,12 +1466,13 @@ export class SvgDocument {
 								} else if (args.render) {
 									const svgPath = new UnresolvedSvgPath(
 										href,
-										transform || args.CTM
-											? SvgTransform.fromString(
-													transform,
-													args.CTM,
-											  ).catenate(useTranslateTransform)
-											: useTranslateTransform,
+										SvgTransform.catenate(
+											useTranslateTransform,
+											SvgTransform.fromString(
+												transform,
+												args.CTM,
+											),
+										),
 									);
 
 									return {
@@ -1153,12 +1495,24 @@ export class SvgDocument {
 		return documents.map((document) => new SvgDocument(document));
 	}
 
-	toString(): string {
-		return `<svg width="${this.structure.properties.width}" height="${
-			this.structure.properties.height
-		}" version="${this.structure.properties.version}" ${
+	toString(usePhysicalDimensions = true): string {
+		// Use physical dimension units to support software that assumes PPI is not 96
+		const [width, height] = [
+			this.structure.properties.width,
+			this.structure.properties.height,
+		].map((dimension) =>
+			usePhysicalDimensions ? `${dimension.mul(0.75)}pt` : `${dimension}`,
+		);
+
+		return `<svg width="${width}" height="${height}" version="${
+			this.structure.properties.version
+		}"${
 			this.structure.properties.viewBox
-				? `viewBox="${this.structure.properties.viewBox.minX} ${this.structure.properties.viewBox.minY} ${this.structure.properties.viewBox.width} ${this.structure.properties.viewBox.height}"`
+				? ` viewBox="${this.structure.properties.viewBox.minX} ${this.structure.properties.viewBox.minY} ${this.structure.properties.viewBox.width} ${this.structure.properties.viewBox.height}"`
+				: ''
+		}${
+			this.structure.properties.preserveAspectRatio
+				? ` preserveAspectRatio="${this.structure.properties.preserveAspectRatio}"`
 				: ''
 		} xmlns="${SVG_NS}"><g>${
 			this.structure.paths.length

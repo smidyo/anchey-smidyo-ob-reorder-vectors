@@ -14,7 +14,7 @@
 %options flex
 
 %{
-	const Decimal = require('decimal.js');
+	const Decimal = require('@Exact-Realty/decimal.js-float');
 	const zero = new Decimal(0);
 	const one = new Decimal(1);
 	const degToRad = Decimal.acos(0).div(90);
@@ -48,15 +48,21 @@
 %% /* language grammar */
 
 root
-	: transform_sequence EOF
+	: transform_sequence_or_empty EOF
 		{ return $1; }
 	;
 
-transform_sequence
-	: comma_wsp
+transform_sequence_or_empty
+	: %empty
 		{ $$ = [ ]; }
-	| transform_sequence transform
-		{ $$ = [...$1, $2]; }
+	| transform_sequence
+	;
+
+transform_sequence
+	: transform
+		{ $$ = [ $1 ]; }
+	| transform_sequence comma_wsp transform
+		{ $$ = [...$1, $3]; }
 	;
 
 transform
@@ -130,7 +136,7 @@ scale_args
 				$1,
 				zero,
 				zero,
-				zero,
+				$1,
 				zero,
 				zero,
 			];
